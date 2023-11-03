@@ -264,6 +264,9 @@ private:
 
   uint32_t getSizeOfInitializedData();
 
+  void changeLoadConfig();
+  template <typename T> void changeLoadConfigGuardData(T *loadConfig);
+
   void checkLoadConfig();
   template <typename T> void checkLoadConfigGuardData(const T *loadConfig);
 
@@ -696,6 +699,9 @@ void Writer::run() {
       writeHeader<pe32_header>();
     }
     writeSections();
+    if (ctx.config.dependentLoadFlags) {
+      changeLoadConfig();
+    }
     checkLoadConfig();
     sortExceptionTable();
 
@@ -2254,6 +2260,32 @@ void Writer::fixTlsAlignment() {
         reinterpret_cast<object::coff_tls_directory32 *>(&secBuf[tlsOffset]);
     tlsDir->setAlignment(tlsAlignment);
   }
+}
+
+void Writer::changeLoadConfig() {
+  Symbol *sym = ctx.symtab.findUnderscore("_load_config_used");
+  auto *b = cast_if_present<DefinedRegular>(sym);
+  if (!b) {
+    if (ctx.config.guardCF != GuardCFLevel::Off)
+      warn("Control Flow Guard is enabled but '_load_config_used' is missing");
+    return;
+  }
+
+  OutputSection *sec = ctx.getOutputSection(b->getChunk());
+  uint8_t *buf = buffer->getBufferStart();
+  uint8_t *secBuf = buf + sec->getFileOff();
+  uint8_t *symBuf = secBuf + (b->getRVA() - sec->getRVA());
+  if (ctx.config.is64())
+    changeLoadConfigGuardData(
+        reinterpret_cast<coff_load_configuration64 *>(symBuf));
+  else
+    changeLoadConfigGuardData(
+        reinterpret_cast<coff_load_configuration32 *>(symBuf));
+}
+
+template <typename T> void Writer::changeLoadConfigGuardData(T *loadConfig) {
+  if (ctx.config.dependentLoadFlags)
+    loadConfig->DependentLoadFlags = ctx.config.dependentLoadFlags;
 }
 
 void Writer::checkLoadConfig() {
