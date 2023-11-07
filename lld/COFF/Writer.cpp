@@ -699,7 +699,9 @@ void Writer::run() {
       writeHeader<pe32_header>();
     }
     writeSections();
-    changeLoadConfig();
+    if (ctx.config.dependentLoadFlags) {
+      changeLoadConfig();
+    }
     checkLoadConfig();
     sortExceptionTable();
 

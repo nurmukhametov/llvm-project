@@ -273,8 +273,9 @@ void LinkerDriver::parseDependentLoadFlags(llvm::opt::Arg *a) {
       error("/dependentloadflag: invalid argument: " + arg);
     return;
   }
-  // No optional argument given. Default value is 0.
-  ctx.config.dependentLoadFlags = 0;
+  // MSVC linker reports error "no argument specified", although MSDN describes
+  // argument as optional.
+  error("no argument specified with option '/dependentloadflag'");
 }
 
 // Parses a string in the form of "EMBED[,=<integer>]|NO".
