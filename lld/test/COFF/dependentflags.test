@@ -4,9 +4,6 @@ RUN: llvm-mc -triple x86_64-windows-msvc -filetype=obj %S/Inputs/loadconfig-cfg-
 RUN: lld-link %S/Inputs/precomp-a.obj %t.ldcfg.obj /out:%t.exe /nodefaultlib /force
 RUN: llvm-readobj --coff-load-config %t.exe | FileCheck %s --check-prefix BASE
 
-RUN: lld-link %S/Inputs/precomp-a.obj %t.ldcfg.obj /out:%t.exe /nodefaultlib /force /dependentloadflag
-RUN: llvm-readobj --coff-load-config %t.exe | FileCheck %s --check-prefix FAIL-NOARG
-
 RUN: lld-link %S/Inputs/precomp-a.obj %t.ldcfg.obj /out:%t.exe /nodefaultlib /force /dependentloadflag:0x800
 RUN: llvm-readobj --coff-load-config %t.exe | FileCheck %s --check-prefix FLAGS-800
 
@@ -17,6 +14,7 @@ RUN: llvm-readobj --coff-load-config %t.exe | FileCheck %s --check-prefix FLAGS-
 RUN: lld-link %S/Inputs/precomp-a.obj %t.ldcfg.obj /out:%t.exe /nodefaultlib /force /dependentloadflag:0x800 /dependentloadflag:0x400
 RUN: llvm-readobj --coff-load-config %t.exe | FileCheck %s --check-prefix FLAGS-400
 
+RUN: not lld-link %S/Inputs/precomp-a.obj %t.ldcfg.obj /out:%t.exe /nodefaultlib /force /dependentloadflag 2>&1 | FileCheck %s --check-prefix FAIL-NOARG
 RUN: not lld-link %S/Inputs/precomp-a.obj %t.ldcfg.obj /out:%t.exe /nodefaultlib /force /dependentloadflag:zz 2>&1 | FileCheck %s --check-prefix FAIL
 RUN: not lld-link %S/Inputs/precomp-a.obj %t.ldcfg.obj /out:%t.exe /nodefaultlib /force /dependentloadflag:0xf0000 2>&1 | FileCheck %s --check-prefix FAIL-RANGE
 
