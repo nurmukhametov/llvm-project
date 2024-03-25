@@ -10,6 +10,7 @@
 #include "COFFObject.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/BinaryFormat/COFF.h"
 #include "llvm/Object/COFF.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -217,6 +218,67 @@ Expected<std::unique_ptr<Object>> COFFReader::create() const {
     return std::move(E);
   if (Error E = setSymbolTargets(*Obj))
     return std::move(E);
+
+  return std::move(Obj);
+}
+
+Expected<std::unique_ptr<Object>>
+BinaryCOFFReader::create(const CommonConfig &Config) {
+  using u16 = support::ulittle16_t;
+  using u32 = support::ulittle32_t;
+
+  auto Obj = std::make_unique<Object>();
+  auto Size = MemBuf->getBufferSize();
+  auto Data = ArrayRef<uint8_t>(
+      reinterpret_cast<const uint8_t *>(MemBuf->getBufferStart()), Size);
+
+  std::string SanitizedFilename = MemBuf->getBufferIdentifier().str();
+  std::replace_if(
+      std::begin(SanitizedFilename), std::end(SanitizedFilename),
+      [](char C) { return !isAlnum(C); }, '_');
+  std::string Prefix = "_binary_" + SanitizedFilename;
+  StartName = Prefix + "_start";
+  EndName = Prefix + "_end";
+  SizeName = Prefix + "_size";
+
+  if (Config.OutputArch) {
+      Obj->CoffFileHeader.Machine = u16(Config.OutputArch->EMachine);
+  } else {
+      return createError("Uninitialized output arch.");
+  }
+  Obj->CoffFileHeader.Characteristics =
+      u16(IMAGE_FILE_LINE_NUMS_STRIPPED | IMAGE_FILE_RELOCS_STRIPPED);
+  Obj->Is64 = true;
+
+  Section S = {};
+  S.Header.Characteristics =
+      u32(IMAGE_SCN_ALIGN_1BYTES | IMAGE_SCN_CNT_INITIALIZED_DATA |
+          IMAGE_SCN_MEM_READ | IMAGE_SCN_MEM_WRITE);
+  S.setOwnedContents(Data);
+  S.Name = ".data";
+  Obj->addSections({ S });
+
+  Symbol StartSym = {};
+  StartSym.Name = StringRef(StartName);
+  StartSym.TargetSectionId = 1;
+  StartSym.Sym.StorageClass = COFF::IMAGE_SYM_CLASS_EXTERNAL;
+  StartSym.Sym.Value = 0;
+
+  Symbol EndSym = {};
+  EndSym.Name = StringRef(EndName);
+  EndSym.TargetSectionId = 1;
+  EndSym.Sym.StorageClass = COFF::IMAGE_SYM_CLASS_EXTERNAL;
+  EndSym.Sym.Value = Size;
+
+  // TODO: gnu objcopy is really works?
+  // Sym.Value value is Size, but there is something suspicios here.
+  Symbol SizeSym = {};
+  SizeSym.Name = StringRef(SizeName);
+  SizeSym.TargetSectionId = COFF::IMAGE_SYM_ABSOLUTE;
+  SizeSym.Sym.StorageClass = COFF::IMAGE_SYM_CLASS_EXTERNAL;
+  SizeSym.Sym.Value = Size;
+
+  Obj->addSymbols({ StartSym , EndSym, SizeSym });
 
   return std::move(Obj);
 }

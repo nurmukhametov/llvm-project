@@ -10,6 +10,7 @@
 #define LLVM_LIB_OBJCOPY_COFF_COFFREADER_H
 
 #include "llvm/BinaryFormat/COFF.h"
+#include "llvm/ObjCopy/CommonConfig.h"
 #include "llvm/Object/COFF.h"
 #include "llvm/Support/Error.h"
 
@@ -32,6 +33,18 @@ class COFFReader {
 public:
   explicit COFFReader(const COFFObjectFile &O) : COFFObj(O) {}
   Expected<std::unique_ptr<Object>> create() const;
+};
+
+class BinaryCOFFReader {
+  MemoryBuffer *MemBuf;
+  // They preserve names because Symbol.Name is StringRef
+  std::string StartName;
+  std::string EndName;
+  std::string SizeName;
+
+public:
+  BinaryCOFFReader(MemoryBuffer *MB) : MemBuf(MB) {}
+  Expected<std::unique_ptr<Object>> create(const CommonConfig &Config);
 };
 
 } // end namespace coff

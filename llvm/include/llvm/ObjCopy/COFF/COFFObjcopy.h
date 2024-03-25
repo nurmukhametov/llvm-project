@@ -11,6 +11,7 @@
 
 namespace llvm {
 class Error;
+class MemoryBuffer;
 class raw_ostream;
 
 namespace object {
@@ -22,6 +23,14 @@ struct CommonConfig;
 struct COFFConfig;
 
 namespace coff {
+
+/// Apply the transformations described by \p Config and \p COFFConfig to
+/// \p In, which is treated as a raw binary input, and writes the result
+/// into \p Out.
+/// \returns any Error encountered whilst performing the operation.
+Error executeObjcopyOnRawBinary(const CommonConfig &Config,
+                                const COFFConfig &COFFConfig, MemoryBuffer &In,
+                                raw_ostream &Out);
 
 /// Apply the transformations described by \p Config and \p COFFConfig
 /// to \p In and writes the result into \p Out.

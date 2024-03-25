@@ -317,6 +317,7 @@ static const StringMap<MachineInfo> TargetMap{
     {"elf64-loongarch", {ELF::EM_LOONGARCH, true, true}},
     // SystemZ
     {"elf64-s390", {ELF::EM_S390, true, false}},
+    {"pe-x86-64", {COFF::IMAGE_FILE_MACHINE_AMD64, true, true}},
 };
 
 static Expected<TargetInfo>
@@ -335,6 +336,8 @@ getOutputTargetInfoByTargetName(StringRef TargetName) {
   FileFormat Format;
   if (TargetName.starts_with("elf"))
     Format = FileFormat::ELF;
+  else if (TargetName.starts_with("pe"))
+    Format = FileFormat::COFF;
   else
     // This should never happen because `TargetName` is valid (it certainly
     // exists in the TargetMap).

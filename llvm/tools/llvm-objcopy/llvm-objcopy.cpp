@@ -121,12 +121,20 @@ static Error executeObjcopyOnRawBinary(ConfigManager &ConfigMgr,
   case FileFormat::Binary:
   case FileFormat::IHex:
   case FileFormat::Unspecified:
-  case FileFormat::SREC:
+  case FileFormat::SREC: {
     Expected<const ELFConfig &> ELFConfig = ConfigMgr.getELFConfig();
     if (!ELFConfig)
       return ELFConfig.takeError();
 
     return elf::executeObjcopyOnRawBinary(Config, *ELFConfig, In, Out);
+  }
+  case FileFormat::COFF: {
+    Expected<const COFFConfig &> COFFConfig = ConfigMgr.getCOFFConfig();
+    if (!COFFConfig)
+      return COFFConfig.takeError();
+
+    return coff::executeObjcopyOnRawBinary(Config, *COFFConfig, In, Out);
+  }
   }
 
   llvm_unreachable("unsupported output format");

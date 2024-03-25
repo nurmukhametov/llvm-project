@@ -319,6 +319,23 @@ static Error handleArgs(const CommonConfig &Config,
   return Error::success();
 }
 
+Error executeObjcopyOnRawBinary(const CommonConfig &Config,
+                                const COFFConfig &COFFConfig, MemoryBuffer &In,
+                                raw_ostream &Out) {
+  BinaryCOFFReader Reader(&In);
+  Expected<std::unique_ptr<Object>> ObjOrErr = Reader.create(Config);
+  if (!ObjOrErr)
+    return createFileError(Config.InputFilename, ObjOrErr.takeError());
+  Object *Obj = ObjOrErr->get();
+  assert(Obj && "Unable to deserialize binary object");
+  if (Error E = handleArgs(Config, COFFConfig, *Obj))
+    return createFileError(Config.InputFilename, std::move(E));
+  COFFWriter Writer(*Obj, Out);
+  if (Error E = Writer.write())
+    return createFileError(Config.OutputFilename, std::move(E));
+  return Error::success();
+}
+
 Error executeObjcopyOnBinary(const CommonConfig &Config,
                              const COFFConfig &COFFConfig, COFFObjectFile &In,
                              raw_ostream &Out) {
