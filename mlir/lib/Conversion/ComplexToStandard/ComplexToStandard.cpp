@@ -311,25 +311,53 @@ private:
 struct ExpOpConversion : public OpConversionPattern<complex::ExpOp> {
   using OpConversionPattern<complex::ExpOp>::OpConversionPattern;
 
+  // exp(x+I*y) = exp(x)*(cos(y)+I*sin(y))
+  // Handle special cases as StableHLO implementation does:
+  // 1. When b == 0, set imag(exp(z)) = 0
+  // 2. When exp(x) == inf, use exp(x/2)*(cos(y)+I*sin(y))*exp(x/2)
   LogicalResult
   matchAndRewrite(complex::ExpOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     auto loc = op.getLoc();
     auto type = cast<ComplexType>(adaptor.getComplex().getType());
-    auto elementType = cast<FloatType>(type.getElementType());
-    arith::FastMathFlagsAttr fmf = op.getFastMathFlagsAttr();
+    auto ET = cast<FloatType>(type.getElementType());
+    arith::FastMathFlags fmf = op.getFastMathFlagsAttr().getValue();
+    const auto &floatSemantics = ET.getFloatSemantics();
+    ImplicitLocOpBuilder b(loc, rewriter);
 
-    Value real =
-        rewriter.create<complex::ReOp>(loc, elementType, adaptor.getComplex());
-    Value imag =
-        rewriter.create<complex::ImOp>(loc, elementType, adaptor.getComplex());
-    Value expReal = rewriter.create<math::ExpOp>(loc, real, fmf.getValue());
-    Value cosImag = rewriter.create<math::CosOp>(loc, imag, fmf.getValue());
+    Value x = b.create<complex::ReOp>(ET, adaptor.getComplex());
+    Value y = b.create<complex::ImOp>(ET, adaptor.getComplex());
+    Value zero = b.create<arith::ConstantOp>(ET, b.getZeroAttr(ET));
+    Value half = b.create<arith::ConstantOp>(ET, b.getFloatAttr(ET, 0.5));
+    Value inf = b.create<arith::ConstantOp>(
+        ET, b.getFloatAttr(ET, APFloat::getInf(floatSemantics)));
+
+    Value exp = b.create<math::ExpOp>(x, fmf);
+    Value xHalf = b.create<arith::MulFOp>(x, half, fmf);
+    Value expHalf = b.create<math::ExpOp>(xHalf, fmf);
+    Value cos = b.create<math::CosOp>(y, fmf);
+    Value sin = b.create<math::SinOp>(y, fmf);
+
+    Value expIsInf =
+        b.create<arith::CmpFOp>(arith::CmpFPredicate::OEQ, exp, inf, fmf);
+    Value yIsZero =
+        b.create<arith::CmpFOp>(arith::CmpFPredicate::OEQ, y, zero);
+
+    // Real path: select between exp(x)*cos(y) and exp(x/2)*cos(y)*exp(x/2)
+    Value realNormal = b.create<arith::MulFOp>(exp, cos, fmf);
+    Value expHalfCos = b.create<arith::MulFOp>(expHalf, cos, fmf);
+    Value realOverflow = b.create<arith::MulFOp>(expHalfCos, expHalf, fmf);
     Value resultReal =
-        rewriter.create<arith::MulFOp>(loc, expReal, cosImag, fmf.getValue());
-    Value sinImag = rewriter.create<math::SinOp>(loc, imag, fmf.getValue());
-    Value resultImag =
-        rewriter.create<arith::MulFOp>(loc, expReal, sinImag, fmf.getValue());
+        b.create<arith::SelectOp>(expIsInf, realOverflow, realNormal);
+
+    // Imaginary part: if y == 0 return 0 else select between exp(x)*sin(y) and
+    // exp(x/2)*sin(y)*exp(x/2)
+    Value imagNormal = b.create<arith::MulFOp>(exp, sin, fmf);
+    Value expHalfSin = b.create<arith::MulFOp>(expHalf, sin, fmf);
+    Value imagOverflow = b.create<arith::MulFOp>(expHalfSin, expHalf, fmf);
+    Value imagNonZero =
+        b.create<arith::SelectOp>(expIsInf, imagOverflow, imagNormal);
+    Value resultImag = b.create<arith::SelectOp>(yIsZero, zero, imagNonZero);
 
     rewriter.replaceOpWithNewOp<complex::CreateOp>(op, type, resultReal,
                                                    resultImag);
