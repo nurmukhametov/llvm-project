@@ -42,12 +42,13 @@ PowFStrengthReduction::matchAndRewrite(math::PowFOp op,
                                        PatternRewriter &rewriter) const {
   Location loc = op.getLoc();
   Value x = op.getLhs();
+  Value y = op.getRhs();
 
   FloatAttr scalarExponent;
   DenseFPElementsAttr vectorExponent;
 
-  bool isScalar = matchPattern(op.getRhs(), m_Constant(&scalarExponent));
-  bool isVector = matchPattern(op.getRhs(), m_Constant(&vectorExponent));
+  bool isScalar = matchPattern(y, m_Constant(&scalarExponent));
+  bool isVector = matchPattern(y, m_Constant(&vectorExponent));
 
   // Returns true if exponent is a constant equal to `value`.
   auto isExponentValue = [&](double value) -> bool {
@@ -56,6 +57,26 @@ PowFStrengthReduction::matchAndRewrite(math::PowFOp op,
 
     if (isVector && vectorExponent.isSplat())
       return vectorExponent.getSplatValue<FloatAttr>()
+          .getValue()
+          .isExactlyValue(value);
+
+    return false;
+  };
+
+  // Check if the base is a constant
+  FloatAttr scalarBase;
+  DenseFPElementsAttr vectorBase;
+
+  bool isScalarBase = matchPattern(x, m_Constant(&scalarBase));
+  bool isVectorBase = matchPattern(x, m_Constant(&vectorBase));
+
+  // Returns true if base is a constant equal to `value`.
+  auto isBaseValue = [&](double value) -> bool {
+    if (isScalarBase)
+      return scalarBase.getValue().isExactlyValue(value);
+
+    if (isVectorBase && vectorBase.isSplat())
+      return vectorBase.getSplatValue<FloatAttr>()
           .getValue()
           .isExactlyValue(value);
 
@@ -115,6 +136,12 @@ PowFStrengthReduction::matchAndRewrite(math::PowFOp op,
     Value powQuarter = rewriter.create<math::SqrtOp>(op.getLoc(), powHalf);
     rewriter.replaceOpWithNewOp<arith::MulFOp>(op,
                                                ValueRange{powHalf, powQuarter});
+    return success();
+  }
+
+  // Replace `pow(2.0, y)` with `exp2(y)`.
+  if (isBaseValue(2.0)) {
+    rewriter.replaceOpWithNewOp<math::Exp2Op>(op, y);
     return success();
   }
 
