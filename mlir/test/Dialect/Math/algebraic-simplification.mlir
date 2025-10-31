@@ -90,6 +90,18 @@ func.func @pow_0_75(%arg0: f32, %arg1 : vector<4xf32>) -> (f32, vector<4xf32>) {
   return %0, %1 : f32, vector<4xf32>
 }
 
+// CHECK-LABEL: @pow_of_two
+func.func @pow_of_two(%arg0: f32, %arg1 : vector<4xf32>) -> (f32, vector<4xf32>) {
+  // CHECK: %[[SCALAR:.*]] = math.exp2 %arg0
+  // CHECK: %[[VECTOR:.*]] = math.exp2 %arg1
+  // CHECK: return %[[SCALAR]], %[[VECTOR]]
+  %c = arith.constant 2.0 : f32
+  %v = arith.constant dense <2.0> : vector<4xf32>
+  %0 = math.powf %c, %arg0 : f32
+  %1 = math.powf %v, %arg1 : vector<4xf32>
+  return %0, %1 : f32, vector<4xf32>
+}
+
 // CHECK-LABEL: @ipowi_zero_exp(
 // CHECK-SAME: %[[ARG0:.+]]: i32
 // CHECK-SAME: %[[ARG1:.+]]: vector<4xi32>
