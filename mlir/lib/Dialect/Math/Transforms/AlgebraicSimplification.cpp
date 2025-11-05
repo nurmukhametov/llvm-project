@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Arith/Utils/Utils.h"
 #include "mlir/Dialect/Complex/IR/Complex.h"
 #include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/Dialect/Math/Transforms/Passes.h"
@@ -101,7 +102,29 @@ PowFStrengthReduction::matchAndRewrite(math::PowFOp op,
 
   // Replace `pow(x, 0.5)` with `sqrt(x)`.
   if (isExponentValue(0.5)) {
-    rewriter.replaceOpWithNewOp<math::SqrtOp>(op, x, fmf);
+    // If we have the 'ninf' flag, we can safely replace with sqrt
+    if (arith::bitEnumContainsAny(fmf, arith::FastMathFlags::ninf)) {
+      rewriter.replaceOpWithNewOp<math::SqrtOp>(op, x, fmf);
+      return success();
+    }
+
+    // Otherwise, we need to handle the edge case where x == -infinity:
+    // pow(-inf, 0.5) returns +inf, but sqrt(-inf) returns NaN.
+    Type type = op.getType();
+    const auto &floatSemantics =
+        cast<FloatType>(getElementTypeOrSelf(type)).getFloatSemantics();
+    Value negInf = mlir::createScalarOrSplatConstant(
+        rewriter, loc, type,
+        APFloat::getInf(floatSemantics, /*Negative=*/true));
+    Value sqrt = math::SqrtOp::create(rewriter, loc, x, fmf);
+    Value posInf = mlir::createScalarOrSplatConstant(
+        rewriter, loc, type,
+        APFloat::getInf(floatSemantics, /*Negative=*/false));
+    Value isNegInf = arith::CmpFOp::create(
+        rewriter, loc, arith::CmpFPredicate::OEQ, x, negInf);
+    Value result =
+        arith::SelectOp::create(rewriter, loc, isNegInf, posInf, sqrt);
+    rewriter.replaceOp(op, result);
     return success();
   }
 

@@ -52,13 +52,33 @@ func.func @pow_recip(%arg0: f32, %arg1 : vector<4xf32>) -> (f32, vector<4xf32>) 
 
 // CHECK-LABEL: @pow_sqrt
 func.func @pow_sqrt(%arg0: f32, %arg1 : vector<4xf32>) -> (f32, vector<4xf32>) {
-  // CHECK: %[[SCALAR:.*]] = math.sqrt %arg0
-  // CHECK: %[[VECTOR:.*]] = math.sqrt %arg1
+  // CHECK-DAG: %[[NEGINF_S:.*]] = arith.constant 0xFF800000 : f32
+  // CHECK-DAG: %[[NEGINF_V:.*]] = arith.constant dense<0xFF800000> : vector<4xf32>
+  // CHECK-DAG: %[[POSINF_S:.*]] = arith.constant 0x7F800000 : f32
+  // CHECK-DAG: %[[POSINF_V:.*]] = arith.constant dense<0x7F800000> : vector<4xf32>
+  // CHECK: %[[SQRT_S:.*]] = math.sqrt %arg0
+  // CHECK: %[[CMP_S:.*]] = arith.cmpf oeq, %arg0, %[[NEGINF_S]]
+  // CHECK: %[[SCALAR:.*]] = arith.select %[[CMP_S]], %[[POSINF_S]], %[[SQRT_S]]
+  // CHECK: %[[SQRT_V:.*]] = math.sqrt %arg1
+  // CHECK: %[[CMP_V:.*]] = arith.cmpf oeq, %arg1, %[[NEGINF_V]]
+  // CHECK: %[[VECTOR:.*]] = arith.select %[[CMP_V]], %[[POSINF_V]], %[[SQRT_V]]
   // CHECK: return %[[SCALAR]], %[[VECTOR]]
   %c = arith.constant 0.5 : f32
   %v = arith.constant dense <0.5> : vector<4xf32>
   %0 = math.powf %arg0, %c : f32
   %1 = math.powf %arg1, %v : vector<4xf32>
+  return %0, %1 : f32, vector<4xf32>
+}
+
+// CHECK-LABEL: @pow_sqrt_ninf
+func.func @pow_sqrt_ninf(%arg0: f32, %arg1 : vector<4xf32>) -> (f32, vector<4xf32>) {
+  // CHECK: %[[SCALAR:.*]] = math.sqrt %arg0 fastmath<ninf>
+  // CHECK: %[[VECTOR:.*]] = math.sqrt %arg1 fastmath<ninf>
+  // CHECK: return %[[SCALAR]], %[[VECTOR]]
+  %c = arith.constant 0.5 : f32
+  %v = arith.constant dense <0.5> : vector<4xf32>
+  %0 = math.powf %arg0, %c fastmath<ninf> : f32
+  %1 = math.powf %arg1, %v fastmath<ninf> : vector<4xf32>
   return %0, %1 : f32, vector<4xf32>
 }
 
