@@ -102,8 +102,59 @@ PowFStrengthReduction::matchAndRewrite(math::PowFOp op,
   }
 
   // Replace `pow(x, 0.5)` with `sqrt(x)`.
+  // However, we need to handle the edge case where x == -infinity:
+  // pow(-inf, 0.5) returns +inf, but sqrt(-inf) returns NaN.
   if (isExponentValue(0.5)) {
-    rewriter.replaceOpWithNewOp<math::SqrtOp>(op, x);
+    auto fastMathFlags = op.getFastmathAttr().getValue();
+
+    // If we have the 'ninf' (no infinities) flag, we can safely replace with sqrt
+    if (arith::bitEnumContainsAny(fastMathFlags, arith::FastMathFlags::ninf)) {
+      rewriter.replaceOpWithNewOp<math::SqrtOp>(op, x);
+      return success();
+    }
+
+    // Otherwise, we need to handle -infinity: (x == -inf) ? +inf : sqrt(x)
+    Type type = op.getType();
+    Value sqrt = rewriter.create<math::SqrtOp>(loc, x);
+
+    // Create -inf constant
+    Value negInf;
+    if (auto vecType = dyn_cast<VectorType>(type)) {
+      auto elementType = cast<FloatType>(vecType.getElementType());
+      auto negInfAttr = rewriter.getFloatAttr(
+          elementType, APFloat::getInf(elementType.getFloatSemantics(), true));
+      negInf = rewriter.create<arith::ConstantOp>(
+          loc, DenseElementsAttr::get(vecType, negInfAttr));
+    } else {
+      auto floatType = cast<FloatType>(type);
+      negInf = rewriter.create<arith::ConstantOp>(
+          loc, rewriter.getFloatAttr(
+              floatType, APFloat::getInf(floatType.getFloatSemantics(), true)));
+    }
+
+    // Create +inf constant
+    Value posInf;
+    if (auto vecType = dyn_cast<VectorType>(type)) {
+      auto elementType = cast<FloatType>(vecType.getElementType());
+      auto posInfAttr = rewriter.getFloatAttr(
+          elementType, APFloat::getInf(elementType.getFloatSemantics(), false));
+      posInf = rewriter.create<arith::ConstantOp>(
+          loc, DenseElementsAttr::get(vecType, posInfAttr));
+    } else {
+      auto floatType = cast<FloatType>(type);
+      posInf = rewriter.create<arith::ConstantOp>(
+          loc, rewriter.getFloatAttr(
+              floatType, APFloat::getInf(floatType.getFloatSemantics(), false)));
+    }
+
+    // Compare x with -inf
+    Value isNegInf = rewriter.create<arith::CmpFOp>(
+        loc, arith::CmpFPredicate::OEQ, x, negInf);
+
+    // Select: (x == -inf) ? +inf : sqrt(x)
+    Value result = rewriter.create<arith::SelectOp>(loc, isNegInf, posInf, sqrt);
+
+    rewriter.replaceOp(op, result);
     return success();
   }
 
